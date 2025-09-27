@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/websocket"
 )
@@ -63,7 +64,12 @@ func callLLMService(message []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post("http://localhost:3000/generate", "application/json", bytes.NewBuffer(jsonData))
+	llmServiceURL := os.Getenv("LLM_SERVICE_URL")
+	if llmServiceURL == "" {
+		llmServiceURL = "http://localhost:3000"
+	}
+
+	resp, err := http.Post(llmServiceURL+"/generate", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
