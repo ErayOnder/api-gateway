@@ -71,14 +71,18 @@ func callLLMService(message []byte) ([]byte, error) {
 
 	resp, err := http.Post(llmServiceURL+"/generate", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call LLM service: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("LLM service returned status code: %d", resp.StatusCode)
+	}
 
 	var llmResponse LLMResponse
 	err = json.NewDecoder(resp.Body).Decode(&llmResponse)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode LLM response: %w", err)
 	}
 
 	responseData, err := json.Marshal(llmResponse)
