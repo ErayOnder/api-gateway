@@ -9,25 +9,40 @@ import (
 	"api-gateway/internal/handlers"
 	"api-gateway/internal/middleware"
 	"api-gateway/internal/services"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
 	// Load configuration
 	cfg := config.Load()
 
-	// Initialize LLM client
-	llmClient := services.NewLLMClient(cfg.LLMServiceURL)
+	// Initialize chat-core client
+	chatCoreClient := services.NewChatCoreClient(cfg.ChatCoreURL)
 
 	// Initialize handlers
-	wsHandler := handlers.NewWebSocketHandler(llmClient)
+	wsHandler := handlers.NewWebSocketHandler(chatCoreClient)
+	conversationHandler := handlers.NewConversationHandler(chatCoreClient)
 
-	// Setup routes with middleware
-	http.HandleFunc("/ws", middleware.LoggingMiddleware(
-		middleware.CORSMiddleware(wsHandler.Handle),
-	))
+	// Setup router
+	router := mux.NewRouter()
+
+	// Apply CORS and logging middleware globally
+	router.Use(middleware.CORS)
+	router.Use(middleware.Logging)
+
+	// WebSocket endpoint
+	router.HandleFunc("/ws", wsHandler.Handle)
+
+	// HTTP API endpoints for conversations
+	api := router.PathPrefix("/api").Subrouter()
+	api.HandleFunc("/conversations", conversationHandler.ListConversations).Methods("GET", "OPTIONS")
+	api.HandleFunc("/conversations", conversationHandler.CreateConversation).Methods("POST", "OPTIONS")
+	api.HandleFunc("/conversations/{id}", conversationHandler.GetConversation).Methods("GET", "OPTIONS")
+	api.HandleFunc("/conversations/{id}", conversationHandler.DeleteConversation).Methods("DELETE", "OPTIONS")
 
 	// Health check endpoint
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
@@ -35,8 +50,9 @@ func main() {
 	// Start server
 	addr := ":" + cfg.ServerPort
 	fmt.Printf("API Gateway starting on %s\n", addr)
-	fmt.Printf("WebSocket endpoint available at ws://localhost:%s/ws\n", cfg.ServerPort)
-	fmt.Printf("LLM Service URL: %s\n", cfg.LLMServiceURL)
+	fmt.Printf("WebSocket endpoint: ws://localhost:%s/ws\n", cfg.ServerPort)
+	fmt.Printf("HTTP API: http://localhost:%s/api\n", cfg.ServerPort)
+	fmt.Printf("Chat-Core Service URL: %s\n", cfg.ChatCoreURL)
 
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Fatal(http.ListenAndServe(addr, router))
 }

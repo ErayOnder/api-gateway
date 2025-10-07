@@ -6,15 +6,15 @@ import (
 
 // Config holds all configuration for the API Gateway
 type Config struct {
-	ServerPort     string
-	LLMServiceURL  string
+	ServerPort      string
+	ChatCoreURL     string
 }
 
 // Load reads configuration from environment variables
 func Load() *Config {
 	return &Config{
-		ServerPort:    getEnv("SERVER_PORT", "8080"),
-		LLMServiceURL: getEnv("LLM_SERVICE_URL", "http://localhost:3000"),
+		ServerPort:      getEnv("SERVER_PORT", "8080"),
+		ChatCoreURL:     getEnv("CHAT_CORE_URL", "http://localhost:3001"),
 	}
 }
 

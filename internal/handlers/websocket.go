@@ -1,11 +1,11 @@
 package handlers
 
 import (
+	"api-gateway/internal/services"
+	"api-gateway/pkg/models"
 	"encoding/json"
 	"log"
 	"net/http"
-
-	"api-gateway/internal/services"
 
 	"github.com/gorilla/websocket"
 )
@@ -18,13 +18,13 @@ var upgrader = websocket.Upgrader{
 
 // WebSocketHandler handles WebSocket connections
 type WebSocketHandler struct {
-	llmClient *services.LLMClient
+	chatCoreClient *services.ChatCoreClient
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
-func NewWebSocketHandler(llmClient *services.LLMClient) *WebSocketHandler {
+func NewWebSocketHandler(chatCoreClient *services.ChatCoreClient) *WebSocketHandler {
 	return &WebSocketHandler{
-		llmClient: llmClient,
+		chatCoreClient: chatCoreClient,
 	}
 }
 
@@ -37,7 +37,7 @@ func (h *WebSocketHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	log.Println("Client connected")
+	log.Println("Client connected to WebSocket")
 
 	for {
 		// Read message from client
@@ -49,15 +49,45 @@ func (h *WebSocketHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 		log.Printf("Received message: %s", message)
 
-		// Call LLM service
-		response, err := h.llmClient.Generate(string(message))
+		// Parse WebSocket message
+		var wsMsg models.WebSocketMessage
+		err = json.Unmarshal(message, &wsMsg)
 		if err != nil {
-			log.Printf("Error calling LLM service: %v", err)
+			log.Printf("Error parsing message: %v", err)
+			h.sendErrorMessage(conn, "Invalid message format")
+			continue
+		}
+
+		// Validate conversationId is provided
+		if wsMsg.ConversationID == "" {
+			log.Printf("Missing conversationId in message")
+			h.sendErrorMessage(conn, "conversationId is required")
+			continue
+		}
+
+		// Validate content
+		if wsMsg.Content == "" {
+			log.Printf("Missing content in message")
+			h.sendErrorMessage(conn, "content is required")
+			continue
+		}
+
+		// Call chat-core service to create message and get LLM response
+		messagePair, err := h.chatCoreClient.SendMessage(wsMsg.ConversationID, wsMsg.Content)
+		if err != nil {
+			log.Printf("Error calling chat-core service: %v", err)
 			h.sendErrorMessage(conn, "Failed to process your message")
 			continue
 		}
 
 		// Send response back to client
+		response := models.WebSocketResponse{
+			Type:             "message",
+			ConversationID:   messagePair.ConversationID,
+			UserMessage:      messagePair.UserMessage,
+			AssistantMessage: messagePair.AssistantMessage,
+		}
+
 		responseData, err := json.Marshal(response)
 		if err != nil {
 			log.Printf("Error marshaling response: %v", err)
@@ -71,13 +101,14 @@ func (h *WebSocketHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Println("Client disconnected")
+	log.Println("Client disconnected from WebSocket")
 }
 
 // sendErrorMessage sends an error message to the client
 func (h *WebSocketHandler) sendErrorMessage(conn *websocket.Conn, message string) {
-	errorResponse := map[string]string{
-		"error": message,
+	errorResponse := models.WebSocketResponse{
+		Type:  "error",
+		Error: message,
 	}
 	data, _ := json.Marshal(errorResponse)
 	conn.WriteMessage(websocket.TextMessage, data)

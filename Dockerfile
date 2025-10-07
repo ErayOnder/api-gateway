@@ -19,8 +19,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
 # Use a smaller base image for the final stage
 FROM alpine:latest
 
-# Install ca-certificates
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates and wget for healthcheck
+RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 

@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// LoggingMiddleware logs HTTP requests
-func LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// Logging logs HTTP requests
+func Logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
 		log.Printf("[%s] %s %s", r.Method, r.RequestURI, r.RemoteAddr)
@@ -16,5 +16,5 @@ func LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		next.ServeHTTP(w, r)
 
 		log.Printf("Request completed in %v", time.Since(start))
-	}
+	})
 }
