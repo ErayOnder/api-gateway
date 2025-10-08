@@ -12,6 +12,7 @@ type Conversation struct {
 	IsPinned     bool      `json:"isPinned"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	Messages     []Message `json:"messages,omitempty"`
 }
 
 // Message represents a message entity from chat-core
