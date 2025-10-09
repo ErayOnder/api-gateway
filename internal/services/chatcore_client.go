@@ -23,21 +23,11 @@ func NewChatCoreClient(baseURL string) *ChatCoreClient {
 }
 
 // CreateConversation creates a new conversation
-func (c *ChatCoreClient) CreateConversation(title, modelName string) (*models.Conversation, error) {
-	requestBody := models.CreateConversationRequest{
-		Title:     title,
-		ModelName: modelName,
-	}
-
-	jsonData, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
+func (c *ChatCoreClient) CreateConversation() (*models.Conversation, error) {
 	resp, err := c.client.Post(
 		c.baseURL+"/conversations",
 		"application/json",
-		bytes.NewBuffer(jsonData),
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call chat-core service: %w", err)
@@ -55,41 +45,6 @@ func (c *ChatCoreClient) CreateConversation(title, modelName string) (*models.Co
 	}
 
 	return &conversation, nil
-}
-
-// SendMessage sends a user message and gets an AI response
-func (c *ChatCoreClient) SendMessage(conversationID, content string) (*models.MessagePairResponse, error) {
-	requestBody := models.SendMessageRequest{
-		Content: content,
-	}
-
-	jsonData, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/conversations/%s/messages/chat", c.baseURL, conversationID)
-	resp, err := c.client.Post(
-		url,
-		"application/json",
-		bytes.NewBuffer(jsonData),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call chat-core service: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("chat-core service returned status code: %d", resp.StatusCode)
-	}
-
-	var messagePair models.MessagePairResponse
-	err = json.NewDecoder(resp.Body).Decode(&messagePair)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &messagePair, nil
 }
 
 // GetConversations retrieves all conversations
@@ -154,4 +109,39 @@ func (c *ChatCoreClient) DeleteConversation(conversationID string) error {
 	}
 
 	return nil
+}
+
+// SendMessage sends a user message and gets an AI response from chat-core service
+func (c *ChatCoreClient) SendMessage(conversationID, content string) (*models.Message, error) {
+	requestBody := models.IncomingMessageRequest{
+		Content: content,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/conversations/%s/messages/chat", c.baseURL, conversationID)
+	resp, err := c.client.Post(
+		url,
+		"application/json",
+		bytes.NewBuffer(jsonData),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call chat-core service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("chat-core service returned status code: %d", resp.StatusCode)
+	}
+
+	var response models.Message
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &response, nil
 }

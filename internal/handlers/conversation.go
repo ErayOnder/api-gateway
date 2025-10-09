@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"api-gateway/internal/services"
-	"api-gateway/pkg/models"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -22,6 +21,20 @@ func NewConversationHandler(chatCoreClient *services.ChatCoreClient) *Conversati
 	}
 }
 
+// CreateConversation creates a new conversation
+func (h *ConversationHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
+	conversation, err := h.chatCoreClient.CreateConversation()
+	if err != nil {
+		log.Printf("Error creating conversation: %v", err)
+		http.Error(w, "Failed to create conversation", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(conversation)
+}
+
 // ListConversations returns all conversations
 func (h *ConversationHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
 	conversations, err := h.chatCoreClient.GetConversations()
@@ -33,26 +46,6 @@ func (h *ConversationHandler) ListConversations(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(conversations)
-}
-
-// CreateConversation creates a new conversation
-func (h *ConversationHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
-	var req models.CreateConversationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	conversation, err := h.chatCoreClient.CreateConversation(req.Title, req.ModelName)
-	if err != nil {
-		log.Printf("Error creating conversation: %v", err)
-		http.Error(w, "Failed to create conversation", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(conversation)
 }
 
 // GetConversation returns a single conversation with messages

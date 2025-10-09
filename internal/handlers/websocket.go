@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -19,6 +20,7 @@ var upgrader = websocket.Upgrader{
 // WebSocketHandler handles WebSocket connections
 type WebSocketHandler struct {
 	chatCoreClient *services.ChatCoreClient
+	writeMutex     sync.Mutex // Protects concurrent writes to WebSocket
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
@@ -50,8 +52,8 @@ func (h *WebSocketHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Received message: %s", message)
 
 		// Parse WebSocket message
-		var wsMsg models.WebSocketMessage
-		err = json.Unmarshal(message, &wsMsg)
+		var incomingUserMessage models.IncomingUserMessage
+		err = json.Unmarshal(message, &incomingUserMessage)
 		if err != nil {
 			log.Printf("Error parsing message: %v", err)
 			h.sendErrorMessage(conn, "Invalid message format")
@@ -59,57 +61,76 @@ func (h *WebSocketHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Validate conversationId is provided
-		if wsMsg.ConversationID == "" {
+		if incomingUserMessage.ConversationID == "" {
 			log.Printf("Missing conversationId in message")
 			h.sendErrorMessage(conn, "conversationId is required")
 			continue
 		}
 
 		// Validate content
-		if wsMsg.Content == "" {
+		if incomingUserMessage.UserMessage == "" {
 			log.Printf("Missing content in message")
 			h.sendErrorMessage(conn, "content is required")
 			continue
 		}
 
-		// Call chat-core service to create message and get LLM response
-		messagePair, err := h.chatCoreClient.SendMessage(wsMsg.ConversationID, wsMsg.Content)
-		if err != nil {
-			log.Printf("Error calling chat-core service: %v", err)
-			h.sendErrorMessage(conn, "Failed to process your message")
-			continue
-		}
-
-		// Send response back to client
-		response := models.WebSocketResponse{
-			Type:             "message",
-			ConversationID:   messagePair.ConversationID,
-			UserMessage:      messagePair.UserMessage,
-			AssistantMessage: messagePair.AssistantMessage,
-		}
-
-		responseData, err := json.Marshal(response)
-		if err != nil {
-			log.Printf("Error marshaling response: %v", err)
-			continue
-		}
-
-		err = conn.WriteMessage(websocket.TextMessage, responseData)
-		if err != nil {
-			log.Printf("Write error: %v", err)
-			break
-		}
+		// Handle message asynchronously in a goroutine
+		// This allows processing multiple messages concurrently
+		go h.processMessage(conn, incomingUserMessage)
 	}
 
 	log.Println("Client disconnected from WebSocket")
 }
 
-// sendErrorMessage sends an error message to the client
-func (h *WebSocketHandler) sendErrorMessage(conn *websocket.Conn, message string) {
-	errorResponse := models.WebSocketResponse{
-		Type:  "error",
-		Error: message,
+// processMessage handles a single message asynchronously
+func (h *WebSocketHandler) processMessage(conn *websocket.Conn, incomingUserMessage models.IncomingUserMessage) {
+	// Call chat-core service to create message and get LLM response
+	botMessage, err := h.chatCoreClient.SendMessage(incomingUserMessage.ConversationID, incomingUserMessage.UserMessage)
+	if err != nil {
+		log.Printf("Error calling chat-core service: %v", err)
+		h.sendErrorMessage(conn, "Failed to process your message")
+		return
 	}
-	data, _ := json.Marshal(errorResponse)
-	conn.WriteMessage(websocket.TextMessage, data)
+
+	// Send response back to client
+	response := models.OutgoingBotMessage{
+		BotMessage: botMessage,
+	}
+
+	responseData, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("Error marshaling response: %v", err)
+		return
+	}
+
+	// Use mutex to safely write to WebSocket from multiple goroutines
+	h.writeMutex.Lock()
+	err = conn.WriteMessage(websocket.TextMessage, responseData)
+	h.writeMutex.Unlock()
+
+	if err != nil {
+		log.Printf("Error sending response: %v", err)
+	}
+}
+
+// sendErrorMessage sends an error message to the WebSocket client
+func (h *WebSocketHandler) sendErrorMessage(conn *websocket.Conn, errorMsg string) {
+	errorResponse := map[string]string{
+		"error": errorMsg,
+	}
+
+	data, err := json.Marshal(errorResponse)
+	if err != nil {
+		log.Printf("Error marshaling error response: %v", err)
+		return
+	}
+
+	// Use mutex to safely write to WebSocket from multiple goroutines
+	h.writeMutex.Lock()
+	err = conn.WriteMessage(websocket.TextMessage, data)
+	h.writeMutex.Unlock()
+
+	if err != nil {
+		log.Printf("Error sending error message: %v", err)
+	}
 }
