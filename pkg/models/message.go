@@ -30,7 +30,8 @@ type IncomingUserMessage struct {
 
 // OutgoingBotMessage represents a response sent to the UI via WebSocket
 type OutgoingBotMessage struct {
-	BotMessage *Message `json:"botMessage"`
+	BotMessage        *Message `json:"botMessage"`
+	ConversationTitle string   `json:"conversationTitle,omitempty"` // Updated title if changed
 }
 
 // IncomingMessageRequest represents a request to send a message to chat-core

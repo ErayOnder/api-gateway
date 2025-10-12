@@ -92,9 +92,21 @@ func (h *WebSocketHandler) processMessage(conn *websocket.Conn, incomingUserMess
 		return
 	}
 
+	// Fetch updated conversation to get the latest title (in case it was auto-generated)
+	conversation, err := h.chatCoreClient.GetConversation(incomingUserMessage.ConversationID)
+	if err != nil {
+		log.Printf("Warning: Failed to fetch conversation title: %v", err)
+		// Continue without title - not critical
+	}
+
 	// Send response back to client
 	response := models.OutgoingBotMessage{
 		BotMessage: botMessage,
+	}
+
+	// Include updated title if we successfully fetched it
+	if conversation != nil {
+		response.ConversationTitle = conversation.Title
 	}
 
 	responseData, err := json.Marshal(response)
